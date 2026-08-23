@@ -14,7 +14,52 @@ function presetName(value) { return ({generic:'通用 OpenAI 兼容',openAI:'Ope
 function styleName(value) { return value === 'responses' ? 'Responses API' : 'Chat Completions'; }
 async function persistServiceChanges() { settings.selected_provider_id=selectedProviderId||null;settings.selected_model_id=selectedModelId||null;await invoke('save_settings',{settings}); }
 
-async function refreshKeyStatus() { await Promise.all(settings.providers.map(async provider => keyStatus.set(provider.id, await invoke('has_api_key', { providerId: provider.id })))); }
+async function refreshKeyStatus() {
+  const results = await Promise.all(
+    settings.providers.map(async provider => {
+      try {
+        const hasKey = await invoke('has_api_key', {
+          providerId: provider.id
+        });
+
+        return [provider.id, hasKey];
+      } catch (error) {
+        console.warn(
+          `读取服务商 ${provider.display_name} 的 API Key 状态失败：`,
+          error
+        );
+
+        return [provider.id, false];
+      }
+    })
+  );
+
+  keyStatus.clear();
+
+for (const [providerId, hasKey] of results) {
+  keyStatus.set(providerId, hasKey);
+}
+}
+function refreshKeyStatusInBackground() {
+  for (const provider of settings.providers) {
+    invoke('has_api_key', {
+      providerId: provider.id
+    })
+      .then(hasKey => {
+        keyStatus.set(provider.id, hasKey);
+        renderServices();
+      })
+      .catch(error => {
+        console.warn(
+          `读取服务商 ${provider.display_name} 的 API Key 状态失败：`,
+          error
+        );
+
+        keyStatus.set(provider.id, false);
+        renderServices();
+      });
+  }
+}
 function configurationReady() { const provider = settings.providers.find(p => p.id === settings.selected_provider_id); return Boolean(provider && keyStatus.get(provider.id) && provider.models.some(m => m.id === settings.selected_model_id)); }
 
 function renderServices() {
@@ -53,5 +98,9 @@ $('#language-add').onclick=()=>{settings.languages.push({id:id(),display_name:'�
 $('#close-window').onclick=()=>getCurrentWindow().close();
 $('#save-settings').onclick=async()=>{if(!validatePrompt()){document.querySelector('[data-tab="prompt"]').click();return}settings.prompt_template=$('#prompt').value;settings.hotkey=$('#hotkey').value.trim();settings.selection_popup_always_on_top=$('#popup-top').checked;settings.always_on_top=$('#always-top').checked;settings.auto_submit_enabled=$('#auto-submit-setting').checked;settings.selected_provider_id=selectedProviderId||null;settings.selected_model_id=selectedModelId||null;try{await invoke('save_settings',{settings});$('#save-state').textContent='已保存';setTimeout(()=>$('#save-state').textContent='',1800)}catch(error){$('#global-error').hidden=false;$('#global-error').textContent=String(error)}};
 
-async function init(){settings=await invoke('load_settings');await refreshKeyStatus();hydrate();}
+async function init() {
+  settings = await invoke('load_settings');
+  hydrate();
+  refreshKeyStatusInBackground();
+}
 init().catch(error=>{$('#global-error').hidden=false;$('#global-error').textContent=`初始化失败：${String(error)}`});
