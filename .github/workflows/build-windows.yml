@@ -1,0 +1,80 @@
+name: Build Windows Application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Display build environment
+        shell: powershell
+        run: |
+          Write-Host "Node.js:"
+          node --version
+
+          Write-Host "npm:"
+          npm --version
+
+          Write-Host "Rust:"
+          rustc --version
+
+          Write-Host "Cargo:"
+          cargo --version
+
+          Write-Host "MSVC linker:"
+          where.exe link.exe
+
+      - name: Install frontend dependencies
+        shell: powershell
+        run: |
+          npm install
+
+      - name: Build Tauri application
+        shell: powershell
+        run: |
+          npm run build
+
+      - name: List generated files
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Release directory:"
+          if (Test-Path "src-tauri\target\release") {
+            Get-ChildItem "src-tauri\target\release" -Recurse |
+              Select-Object FullName, Length
+          } else {
+            Write-Host "Release directory does not exist."
+          }
+
+      - name: Upload Windows installers
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Translator-Windows-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
