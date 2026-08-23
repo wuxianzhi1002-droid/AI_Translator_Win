@@ -131,13 +131,74 @@ fn render_prompt(t:&str,lang:&str,addition:&str,input:&str)->Result<String,Strin
 
 #[cfg(windows)]
 async fn capture_selection() -> Result<String, String> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL};
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?; let old = clipboard.get_text().ok();
-    clipboard.set_text(format!("AI_TRANSLATOR_{}",Uuid::new_v4())).map_err(|e| e.to_string())?;
-    unsafe { let inputs=[key(VK_CONTROL,0),key(VK_C,0),key(VK_C,KEYEVENTF_KEYUP),key(VK_CONTROL,KEYEVENTF_KEYUP)];SendInput(&inputs,std::mem::size_of::<INPUT>() as i32); }
-    let mut selected=None; for _ in 0..12 { tokio::time::sleep(Duration::from_millis(35)).await; if let Ok(s)=clipboard.get_text(){if !s.starts_with("AI_TRANSLATOR_"){selected=Some(s);break}} }
-    if let Some(s)=old{let _=clipboard.set_text(s)} let s=selected.unwrap_or_default();if s.trim().is_empty(){Err("没有读取到选中文字".into())}else{Ok(s.trim().into())}
-    fn key(vk:VIRTUAL_KEY,flags:windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS)->INPUT{INPUT{r#type:INPUT_KEYBOARD,Anonymous:INPUT_0{ki:KEYBDINPUT{wVk:vk,wScan:0,dwFlags:flags,time:0,dwExtraInfo:0}}}}
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL,
+    };
+
+    fn key(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| e.to_string())?;
+
+    let old_text = clipboard.get_text().ok();
+    let marker = format!("AI_TRANSLATOR_{}", Uuid::new_v4());
+
+    clipboard
+        .set_text(marker.clone())
+        .map_err(|e| e.to_string())?;
+
+    let inputs = [
+        key(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
+        key(VK_C, KEYBD_EVENT_FLAGS(0)),
+        key(VK_C, KEYEVENTF_KEYUP),
+        key(VK_CONTROL, KEYEVENTF_KEYUP),
+    ];
+
+    unsafe {
+        SendInput(
+            &inputs,
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+
+    let mut selected = None;
+
+    for _ in 0..12 {
+        tokio::time::sleep(Duration::from_millis(35)).await;
+
+        if let Ok(text) = clipboard.get_text() {
+            if text != marker {
+                selected = Some(text);
+                break;
+            }
+        }
+    }
+
+    if let Some(text) = old_text {
+        let _ = clipboard.set_text(text);
+    }
+
+    let selected = selected.unwrap_or_default();
+
+    if selected.trim().is_empty() {
+        Err("没有读取到选中文字".to_string())
+    } else {
+        Ok(selected.trim().to_string())
+    }
 }
 
 async fn selection_shortcut(app: tauri::AppHandle) {
@@ -153,7 +214,7 @@ fn main() {
     let path=settings_path();let settings=read_settings(&path);let hotkey=settings.hotkey.clone();
     tauri::Builder::default()
         .manage(State{settings:Mutex::new(settings),settings_path:path,registered_hotkey:Mutex::new(hotkey.clone())})
-        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app,shortcut,event|{if event.state()==ShortcutState::Pressed{let app=app.clone();tauri::async_runtime::spawn(async move{selection_shortcut(app).await;});}}).build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app,_shortcut,event|{if event.state()==ShortcutState::Pressed{let app=app.clone();tauri::async_runtime::spawn(async move{selection_shortcut(app).await;});}}).build())
         .setup(move|app|{
             app.global_shortcut().register(hotkey.as_str())?;
             let open=MenuItem::with_id(app,"open","打开主窗口",true,None::<&str>)?;
