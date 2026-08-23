@@ -22,11 +22,14 @@ function hydrate() {
   updateConfigurationState();
 }
 
-async function updateConfigurationState() {
+function updateConfigurationState() {
   const entry = selectedModel();
-  const hasKey = entry ? await invoke('has_api_key', { providerId: entry.provider.id }) : false;
+  const hasKey = Boolean(entry?.provider?.api_key?.trim());
   $('#setup-overlay').hidden = Boolean(entry && hasKey);
-  if (entry && !hasKey) $('#setup-message').textContent = '当前服务商还没有 API 密钥，请在设置中补充。';
+  if (entry && !hasKey) {
+    $('#setup-message').textContent =
+      '当前服务商还没有 API 密钥，请在设置中补充。';
+  }
 }
 
 async function refreshClipboardSuggestion() {

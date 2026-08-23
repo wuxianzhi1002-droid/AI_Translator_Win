@@ -9,7 +9,7 @@
 - OpenAI Responses API 与兼容 Chat Completions。
 - OpenAI、阿里云百炼、智谱 AI、小米 MiMo 的翻译优化参数。
 - 流式显示、手动提交、7 秒自动提交、复制译文。
-- API Key 通过 Windows Credential Manager 保存，不写入设置 JSON。
+- API Key 保存在当前 Windows 用户本地设置中。
 - 全局划词翻译：默认 `Ctrl+Alt+T`，可修改快捷键。
 - 在鼠标附近弹出划词译文，可复制、固定或关闭。
 - 设置窗口、服务商/模型双栏管理、完整编辑表单和集中式模型选择窗口与 macOS 原版保持一致。
@@ -57,7 +57,7 @@ npm run dev
 ## 数据位置
 
 - 普通设置：`%LOCALAPPDATA%\AI.Translator\settings.json`
-- API Key：Windows Credential Manager，服务名 `AI.Translator.ProviderAPIKey`
+- API Key：`%LOCALAPPDATA%\AI.Translator\settings.json`（明文，仅本机当前用户）
 
 ## GitHub Actions
 
