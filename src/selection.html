@@ -1,1 +1,25 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><link rel="stylesheet" href="selection.css"></head><body><header><span>划词翻译</span><button id="pin">📌</button><button id="close">×</button></header><div id="source"></div><article id="result">正在翻译…</article><footer><span id="status"></span><button id="copy">复制译文</button></footer><script type="module" src="selection.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>划词翻译</title>
+  <link rel="stylesheet" href="selection.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo">译</span><strong>划词翻译</strong></div>
+    <div class="actions">
+      <button id="pin" title="保持窗口">◇</button>
+      <button id="close" title="关闭">×</button>
+    </div>
+  </header>
+  <section id="source"></section>
+  <article id="result"><span class="placeholder">正在翻译…</span></article>
+  <footer>
+    <span id="status"></span>
+    <button id="copy">复制译文</button>
+  </footer>
+  <script type="module" src="selection.js"></script>
+</body>
+</html>
