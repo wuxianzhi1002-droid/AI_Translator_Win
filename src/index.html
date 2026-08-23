@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 翻译工具</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+  <main id="translator">
+    <section class="pane source-pane">
+      <header><strong>源语言：自动检测</strong><button class="icon settings" title="设置">⚙</button></header>
+      <div class="editor-wrap"><textarea id="source" placeholder="输入文本…"></textarea><button id="clipboard-card" hidden></button></div>
+      <footer><button id="clear">清空</button><label><input id="auto-submit" type="checkbox"> 自动提交</label><span class="spacer"></span><label>附加要求： <select id="addition"></select></label></footer>
+    </section>
+    <button id="translate" class="translate" title="翻译（Ctrl+Enter）">▶</button>
+    <section class="pane target-pane">
+      <header><strong>目标语言：</strong><select id="language"></select><span class="spacer"></span><span id="stale" hidden>结果已过期</span><button id="pin" class="icon" title="窗口置顶">📌</button></header>
+      <article id="result" data-placeholder="翻译结果…"></article>
+      <div id="status"></div>
+      <footer><label>模型： <select id="model"></select></label><span class="spacer"></span><button id="copy">复制</button></footer>
+    </section>
+  </main>
+
+  <dialog id="settings-dialog">
+    <form method="dialog" class="settings-form">
+      <nav><button type="button" data-tab="services" class="active">服务与模型</button><button type="button" data-tab="prompt">提示词</button><button type="button" data-tab="mappings">变量映射</button><button type="button" data-tab="general">划词与通用</button></nav>
+      <section id="tab-services" class="tab active">
+        <div class="settings-columns"><div><h3>服务商</h3><select id="providers" size="12"></select><div><button type="button" id="provider-add">＋</button><button type="button" id="provider-edit">编辑</button><button type="button" id="provider-delete">删除</button></div></div><div><h3>模型</h3><select id="models" size="12"></select><div><button type="button" id="model-add">＋</button><button type="button" id="model-edit">编辑</button><button type="button" id="model-delete">删除</button></div></div></div>
+      </section>
+      <section id="tab-prompt" class="tab"><p>必须各包含一次三个变量，并保留两组翻译标签。</p><textarea id="prompt"></textarea><button type="button" id="prompt-reset">恢复默认</button></section>
+      <section id="tab-mappings" class="tab"><p>目标语言和附加要求可直接编辑 JSON 列表。</p><label>目标语言<textarea id="languages-json"></textarea></label><label>附加要求<textarea id="additions-json"></textarea></label></section>
+      <section id="tab-general" class="tab"><label><input id="always-top" type="checkbox"> 主窗口始终置顶</label><label><input id="popup-top" type="checkbox"> 划词翻译弹窗始终置顶</label><label>全局划词快捷键 <input id="hotkey" value="Ctrl+Alt+T"></label><p class="hint">在任意软件中选中文字后按快捷键。程序会复制选区、恢复原剪贴板文本，并在鼠标附近显示译文。</p></section>
+      <footer><span id="settings-error"></span><button value="cancel">取消</button><button id="settings-save" value="default">保存</button></footer>
+    </form>
+  </dialog>
+  <script type="module" src="app.js"></script>
+</body></html>
