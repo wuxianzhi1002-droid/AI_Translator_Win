@@ -74,7 +74,7 @@ fn show_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     let window = if let Some(window) = app.get_webview_window("settings") { window } else {
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title("AI 翻译工具设置").inner_size(900.0, 580.0).min_inner_size(760.0, 520.0)
-            .center().visible(false).build().map_err(|e| e.to_string())?
+            .center().always_on_top(true).visible(false).build().map_err(|e| e.to_string())?
     };
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())
@@ -100,8 +100,6 @@ fn save_settings(app: tauri::AppHandle, state: tauri::State<State>, settings: Ap
 #[tauri::command]
 fn write_clipboard_text(text: String) -> Result<(), String> { arboard::Clipboard::new().and_then(|mut c| c.set_text(text)).map_err(|e| e.to_string()) }
 
-#[tauri::command]
-fn read_clipboard_text() -> Result<String, String> { arboard::Clipboard::new().and_then(|mut c| c.get_text()).map_err(|e| e.to_string()) }
 
 #[tauri::command]
 async fn start_translation(app: tauri::AppHandle, state: tauri::State<'_, State>, source: String,
@@ -250,7 +248,7 @@ fn main() {
             if !configuration_ready { let _=show_settings_window(app.handle()); }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![load_settings,save_settings,open_settings_window,write_clipboard_text,read_clipboard_text,start_translation])
+        .invoke_handler(tauri::generate_handler![load_settings,save_settings,open_settings_window,write_clipboard_text,start_translation])
         .on_window_event(|window,event|{if window.label()=="main"{if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();let _=window.hide();}}})
         .run(tauri::generate_context!()).expect("error while running AI Translator");
 }
