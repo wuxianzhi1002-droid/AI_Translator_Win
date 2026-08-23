@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Main, settings and selection translation windows",
   "windows": ["main", "settings", "selection"],
-  "permissions": ["core:default", "core:event:default", "core:window:default"]
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:window:allow-set-always-on-top"
+  ]
 }
