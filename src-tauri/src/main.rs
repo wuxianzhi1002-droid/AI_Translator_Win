@@ -244,7 +244,8 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
         #[cfg(windows)]
         {
             use windows::Win32::Foundation::POINT;
-            use windows::Win32::UI::WindowsAndMessaging::{GetAsyncKeyState, GetCursorPos};
+            use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
             let mut was_down = false;
             let mut start = POINT::default();
