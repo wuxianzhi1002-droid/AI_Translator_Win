@@ -29,14 +29,6 @@ function updateConfigurationState() {
   if (entry && !hasKey) $('#setup-message').textContent = '当前服务商还没有 API 密钥，请在设置中补充。';
 }
 
-async function refreshClipboardSuggestion() {
-  if ($('#source').value.trim()) return;
-  try {
-    const text = (await invoke('read_clipboard_text')).trim();
-    if (text && text.length < 10000) { $('#clipboard-card span').textContent = text; $('#clipboard-card').hidden = false; }
-  } catch (_) { /* 剪贴板暂时被其他程序占用时忽略 */ }
-}
-
 function renderModelPicker() {
   const root = $('#model-options'); root.innerHTML = '';
   if (!flattenedModels().length) { root.innerHTML = '<div class="empty-state"><b>尚无模型</b><span>请先在设置中添加服务商和模型。</span></div>'; return; }
@@ -46,7 +38,17 @@ function renderModelPicker() {
     for (const model of provider.models) {
       const button = document.createElement('button'); button.className = `model-option${model.id === settings.selected_model_id ? ' selected' : ''}`;
       button.innerHTML = `<span><b>${escapeHtml(model.display_name || model.api_name)}</b><small>${escapeHtml(model.api_name)}</small></span><i>${model.id === settings.selected_model_id ? '✓' : ''}</i>`;
-      button.onclick = async () => { settings.selected_provider_id = provider.id; settings.selected_model_id = model.id; await persistSelections(); $('#model-dialog').close(); };
+      button.onclick = async () => {
+        $('#model-dialog').close();
+        settings.selected_provider_id = provider.id;
+        settings.selected_model_id = model.id;
+        hydrate();
+        try {
+          await persistSelections();
+        } catch (error) {
+          finishError(`保存模型选择失败：${String(error)}`);
+        }
+      };
       group.append(button);
     }
     root.append(group);
@@ -55,7 +57,7 @@ function renderModelPicker() {
 
 async function persistSelections() {
   settings.selected_language_id = $('#language').value || null; settings.selected_addition_id = $('#addition').value || null; settings.auto_submit_enabled = $('#auto-submit').checked;
-  await invoke('save_settings', { settings }); hydrate();
+  await invoke('save_settings', { settings });
 }
 
 async function translate() {
@@ -77,14 +79,21 @@ $('#translate').onclick = translate;
 $('#clear').onclick = () => { $('#source').value = ''; $('#result').textContent = ''; $('#status').textContent = ''; output = ''; $('#stale').hidden = true; };
 $('#copy').onclick = () => output && invoke('write_clipboard_text', { text: output });
 $('#pin').onclick = async () => { settings.always_on_top = !settings.always_on_top; await getCurrentWindow().setAlwaysOnTop(settings.always_on_top); await persistSelections(); };
-$('#settings').onclick = $('#open-settings').onclick = $('#manage-models').onclick = () => invoke('open_settings_window');
+async function openSettings() {
+  if ($('#model-dialog').open) $('#model-dialog').close();
+  try {
+    await invoke('open_settings_window');
+  } catch (error) {
+    finishError(`打开设置失败：${String(error)}`);
+  }
+}
+$('#settings').onclick = $('#open-settings').onclick = $('#manage-models').onclick = openSettings;
 $('#model-picker').onclick = () => $('#model-dialog').showModal();
 document.querySelectorAll('.dialog-close').forEach(button => button.onclick = () => $('#model-dialog').close());
 $('#language').onchange = $('#addition').onchange = persistSelections; $('#auto-submit').onchange = persistSelections;
 $('#source').oninput = () => { $('#clipboard-card').hidden = true; $('#stale').hidden = !output || $('#source').value.trim() === lastSubmittedSource; clearTimeout(autoTimer); if ($('#auto-submit').checked && $('#source').value.trim()) autoTimer = setTimeout(translate, 7000); };
 $('#clipboard-card').onclick = () => { $('#source').value = $('#clipboard-card span').textContent; $('#clipboard-card').hidden = true; $('#source').dispatchEvent(new Event('input')); };
 document.addEventListener('keydown', event => { if (event.ctrlKey && event.key === 'Enter') translate(); if (event.key === 'Escape' && $('#model-dialog').open) $('#model-dialog').close(); });
-window.addEventListener('focus', refreshClipboardSuggestion);
 
 settings = await invoke("load_settings");
 hydrate();
@@ -95,7 +104,6 @@ try {
   console.warn("设置窗口置顶失败：", error);
 }
 
-await refreshClipboardSuggestion();
 }
 
 init().catch(error => finishError(`初始化失败：${String(error)}`));
