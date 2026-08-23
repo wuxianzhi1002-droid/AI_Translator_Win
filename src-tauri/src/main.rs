@@ -19,6 +19,7 @@ struct ModelConfig { id: String, display_name: String, api_name: String }
 struct ProviderConfig {
     id: String, display_name: String, base_url: String, api_style: String,
     optimization_preset: String, translation_optimizations_enabled: bool,
+    #[serde(default)] api_key: String,
     #[serde(default)] models: Vec<ModelConfig>,
 }
 
@@ -70,59 +71,6 @@ fn write_settings(path: &PathBuf, settings: &AppSettings) -> Result<(), String> 
 #[tauri::command]
 fn load_settings(state: tauri::State<State>) -> AppSettings { state.settings.lock().unwrap().clone() }
 
-#[tauri::command]
-async fn set_api_key(
-    provider_id: String,
-    api_key: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        keyring::Entry::new(
-            "AI.Translator.ProviderAPIKey",
-            &provider_id,
-        )
-        .map_err(|e| e.to_string())?
-        .set_password(&api_key)
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn has_api_key(provider_id: String) -> bool {
-    tauri::async_runtime::spawn_blocking(move || {
-        keyring::Entry::new(
-            "AI.Translator.ProviderAPIKey",
-            &provider_id,
-        )
-        .ok()
-        .and_then(|entry| entry.get_password().ok())
-        .is_some_and(|key| !key.is_empty())
-    })
-    .await
-    .unwrap_or(false)
-}
-
-#[tauri::command]
-async fn delete_api_key(
-    provider_id: String,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let entry = keyring::Entry::new(
-            "AI.Translator.ProviderAPIKey",
-            &provider_id,
-        )
-        .map_err(|e| e.to_string())?;
-
-        match entry.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(error.to_string()),
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
 fn show_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     let window = if let Some(window) = app.get_webview_window("settings") { window } else {
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
@@ -170,7 +118,8 @@ async fn translate_and_emit(app: tauri::AppHandle, settings: AppSettings, source
     let language = settings.languages.iter().find(|x| x.id == language_id).ok_or("找不到目标语言")?;
     let addition = settings.additions.iter().find(|x| x.id == addition_id).ok_or("找不到附加要求")?;
     let prompt = render_prompt(&settings.prompt_template, &language.prompt_value, &addition.prompt_value, &source)?;
-    let key = keyring::Entry::new("AI.Translator.ProviderAPIKey", &provider.id).map_err(|e| e.to_string())?.get_password().map_err(|_| "请先填写 API Key".to_string())?;
+    let key = provider.api_key.trim().to_string();
+    if key.is_empty() { return Err("请先填写 API Key".to_string()); }
     let event = if target == "selection" { "selection-delta" } else { "translation-delta" };
     let done = if target == "selection" { "selection-done" } else { "translation-done" };
     let error = if target == "selection" { "selection-error" } else { "translation-error" };
@@ -274,8 +223,7 @@ fn main() {
         let provider = settings.providers.iter().find(|provider| &provider.id == provider_id)?;
         let model_id = settings.selected_model_id.as_ref()?;
         provider.models.iter().find(|model| &model.id == model_id)?;
-        let has_key = keyring::Entry::new("AI.Translator.ProviderAPIKey", provider_id).ok()?.get_password().ok().is_some_and(|key| !key.is_empty());
-        has_key.then_some(())
+        (!provider.api_key.trim().is_empty()).then_some(())
     }).is_some();
     tauri::Builder::default()
         .manage(State{settings:Mutex::new(settings),settings_path:path,registered_hotkey:Mutex::new(hotkey.clone())})
@@ -303,7 +251,7 @@ fn main() {
             if !configuration_ready { let _=show_settings_window(app.handle()); }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![load_settings,save_settings,set_api_key,has_api_key,delete_api_key,open_settings_window,write_clipboard_text,read_clipboard_text,start_translation])
+        .invoke_handler(tauri::generate_handler![load_settings,save_settings,open_settings_window,write_clipboard_text,read_clipboard_text,start_translation])
         .on_window_event(|window,event|{if window.label()=="main"{if let tauri::WindowEvent::CloseRequested{api,..}=event{api.prevent_close();let _=window.hide();}}})
         .run(tauri::generate_context!()).expect("error while running AI Translator");
 }
