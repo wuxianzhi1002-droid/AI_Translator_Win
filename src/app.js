@@ -86,6 +86,13 @@ $('#clipboard-card').onclick = () => { $('#source').value = $('#clipboard-card s
 document.addEventListener('keydown', event => { if (event.ctrlKey && event.key === 'Enter') translate(); if (event.key === 'Escape' && $('#model-dialog').open) $('#model-dialog').close(); });
 window.addEventListener('focus', refreshClipboardSuggestion);
 
-settings = await invoke('load_settings'); hydrate(); await getCurrentWindow().setAlwaysOnTop(settings.always_on_top); await refreshClipboardSuggestion();
+settings = await invoke("load_settings");
+hydrate();
+
+try {
+  await getCurrentWindow().setAlwaysOnTop(settings.always_on_top);
+} catch (error) {
+  console.warn("设置窗口置顶失败：", error);
 }
-init().catch(error => { $('#status').textContent = `⚠ 初始化失败：${String(error)}`; });
+
+await refreshClipboardSuggestion();
