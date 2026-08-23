@@ -12,6 +12,8 @@
 - API Key 通过 Windows Credential Manager 保存，不写入设置 JSON。
 - 全局划词翻译：默认 `Ctrl+Alt+T`，可修改快捷键。
 - 在鼠标附近弹出划词译文，可复制、固定或关闭。
+- 设置窗口、服务商/模型双栏管理、完整编辑表单和集中式模型选择窗口与 macOS 原版保持一致。
+- 首次运行自动打开独立设置窗口；未完成模型配置时主窗口显示引导层。
 
 ## 划词翻译的工作方式
 
@@ -39,7 +41,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\build-windows.ps1
 ```
 
-生成的 `.msi` 和 NSIS 安装包位于：
+生成的 NSIS 安装包位于：
 
 ```text
 src-tauri\target\release\bundle
@@ -57,8 +59,8 @@ npm run dev
 - 普通设置：`%LOCALAPPDATA%\AI.Translator\settings.json`
 - API Key：Windows Credential Manager，服务名 `AI.Translator.ProviderAPIKey`
 
-## 已知待完善项
+## GitHub Actions
 
-- 当前配置编辑器为了保持依赖精简，服务商和模型编辑使用系统输入框；后续可换成更完整的表单。
-- 网络诊断日志字段已保留，但详细日志轮换尚未接入。
-- 发布前建议在真实 Windows 10 和 Windows 11 各执行一次安装、托盘、快捷键冲突和多显示器弹窗测试。
+仓库已包含 `.github/workflows/build-windows.yml`。推送到 `main`、提交 PR 或手动运行工作流时，会依次验证三个前端窗口、运行 Rust 测试并生成 NSIS 安装包。
+
+发布前建议在真实 Windows 10 和 Windows 11 各执行一次安装、托盘、快捷键冲突和多显示器弹窗测试。

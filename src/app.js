@@ -1,24 +1,91 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-const $=s=>document.querySelector(s); let settings, output='', translating=false, autoTimer;
-const defaults={prompt_template:`You are a professional translator. Translate the text inside the second <translate></translate> block into {{target_language}}.\nAdditional requirements: {{addition}}\nReturn only the translated text, without explanations or the tags shown in this example: <translate>translation</translate>.\n\n<translate>{{input}}</translate>`};
-async function load(){settings=await invoke('load_settings');hydrate();}
-function opts(el,items,selected,label=x=>x.display_name){el.innerHTML='';for(const x of items){const o=new Option(label(x),x.id);o.selected=x.id===selected;el.add(o)}}
-function flatModels(){return settings.providers.flatMap(p=>p.models.map(m=>({id:m.id,p,m,name:`${p.display_name} · ${m.display_name||m.api_name}`})))}
-function hydrate(){opts($('#language'),settings.languages,settings.selected_language_id);opts($('#addition'),settings.additions,settings.selected_addition_id);const ms=flatModels();opts($('#model'),ms,settings.selected_model_id,x=>x.name);$('#auto-submit').checked=settings.auto_submit_enabled;$('#always-top').checked=settings.always_on_top;$('#popup-top').checked=settings.selection_popup_always_on_top;$('#hotkey').value=settings.hotkey;$('#prompt').value=settings.prompt_template;$('#languages-json').value=JSON.stringify(settings.languages,null,2);$('#additions-json').value=JSON.stringify(settings.additions,null,2);renderSettingsLists();}
-function renderSettingsLists(){opts($('#providers'),settings.providers,settings.selected_provider_id);const p=settings.providers.find(x=>x.id===$('#providers').value)||settings.providers[0];opts($('#models'),p?.models||[],settings.selected_model_id,x=>x.display_name||x.api_name)}
-async function translate(){if(translating||!$('#source').value.trim())return; translating=true;output='';$('#result').textContent='';$('#status').textContent='正在翻译…';$('#translate').classList.add('busy');try{await invoke('start_translation',{source:$('#source').value,providerId:modelSelected()?.p.id,modelId:modelSelected()?.m.id,languageId:$('#language').value,additionId:$('#addition').value,target:'main'})}catch(e){doneError(e)}}
-function modelSelected(){return flatModels().find(x=>x.m.id===$('#model').value)}
-function doneError(e){translating=false;$('#translate').classList.remove('busy');$('#status').textContent='失败：'+e}
-await listen('translation-delta',e=>{output+=e.payload;$('#result').textContent=output});await listen('translation-done',()=>{translating=false;$('#translate').classList.remove('busy');$('#status').textContent=''});await listen('translation-error',e=>doneError(e.payload));
-$('#translate').onclick=translate;$('#clear').onclick=()=>{$('#source').value='';$('#result').textContent='';output=''};$('#copy').onclick=()=>invoke('write_clipboard_text',{text:output});$('#pin').onclick=async()=>{settings.always_on_top=!settings.always_on_top;await getCurrentWindow().setAlwaysOnTop(settings.always_on_top)};$('.settings').onclick=()=>$('#settings-dialog').showModal();
-$('#source').oninput=()=>{clearTimeout(autoTimer);if($('#auto-submit').checked)autoTimer=setTimeout(translate,7000)};document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')translate()});
-document.querySelectorAll('nav [data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');$('#tab-'+b.dataset.tab).classList.add('active')});
-$('#providers').onchange=renderSettingsLists;$('#prompt-reset').onclick=()=>$('#prompt').value=defaults.prompt_template;
-function editProvider(existing){const p=existing||{id:crypto.randomUUID(),display_name:'',base_url:'https://api.openai.com/v1',api_style:'responses',optimization_preset:'generic',translation_optimizations_enabled:false,models:[]};const name=prompt('服务商显示名称',p.display_name);if(name===null)return;const url=prompt('基础网址',p.base_url);if(url===null)return;const style=prompt('接口格式：responses 或 chatCompletions',p.api_style);if(style===null||!['responses','chatCompletions'].includes(style)){alert('接口格式必须是 responses 或 chatCompletions');return}const preset=prompt('优化方案：generic / openAI / alibabaCloud / zhipu / xiaomi',p.optimization_preset);if(preset===null||!['generic','openAI','alibabaCloud','zhipu','xiaomi'].includes(preset)){alert('优化方案名称无效');return}const key=prompt('API Key（留空表示不修改）','');p.display_name=name;p.base_url=url;p.api_style=style;p.optimization_preset=preset;p.translation_optimizations_enabled=preset!=='generic';if(!existing)settings.providers.push(p);if(key)invoke('set_api_key',{providerId:p.id,apiKey:key});renderSettingsLists()}
-$('#provider-add').onclick=()=>editProvider(null);$('#provider-edit').onclick=()=>editProvider(settings.providers.find(x=>x.id===$('#providers').value));$('#provider-delete').onclick=()=>{settings.providers=settings.providers.filter(x=>x.id!==$('#providers').value);renderSettingsLists()};
-function editModel(existing){const p=settings.providers.find(x=>x.id===$('#providers').value);if(!p)return;const m=existing||{id:crypto.randomUUID(),display_name:'',api_name:''};const api=prompt('真实模型名称',m.api_name);if(api===null)return;const name=prompt('显示名称',m.display_name);if(name===null)return;m.api_name=api;m.display_name=name;if(!existing)p.models.push(m);renderSettingsLists()}
-$('#model-add').onclick=()=>editModel(null);$('#model-edit').onclick=()=>{const p=settings.providers.find(x=>x.id===$('#providers').value);editModel(p?.models.find(x=>x.id===$('#models').value))};$('#model-delete').onclick=()=>{const p=settings.providers.find(x=>x.id===$('#providers').value);if(p)p.models=p.models.filter(x=>x.id!==$('#models').value);renderSettingsLists()};
-$('#settings-save').onclick=async e=>{e.preventDefault();try{settings.prompt_template=$('#prompt').value;settings.languages=JSON.parse($('#languages-json').value);settings.additions=JSON.parse($('#additions-json').value);settings.always_on_top=$('#always-top').checked;settings.selection_popup_always_on_top=$('#popup-top').checked;settings.auto_submit_enabled=$('#auto-submit').checked;settings.hotkey=$('#hotkey').value;settings.selected_provider_id=$('#providers').value||null;settings.selected_model_id=$('#models').value||null;await invoke('save_settings',{settings});await getCurrentWindow().setAlwaysOnTop(settings.always_on_top);$('#settings-dialog').close();hydrate()}catch(e){$('#settings-error').textContent=e}};
-await listen('open-settings',()=>$('#settings-dialog').showModal());await load();
+
+const $ = selector => document.querySelector(selector);
+let settings, output = '', translating = false, autoTimer, lastSubmittedSource = '';
+
+function optionList(element, items, selected) { element.replaceChildren(...items.map(item => { const option = new Option(item.display_name, item.id); option.selected = item.id === selected; return option; })); }
+function flattenedModels() { return (settings?.providers || []).flatMap(provider => provider.models.map(model => ({ provider, model, label: `${provider.display_name} · ${model.display_name || model.api_name}` }))); }
+function selectedModel() { return flattenedModels().find(entry => entry.model.id === settings.selected_model_id); }
+function configurationReady() { return Boolean(settings?.selected_provider_id && settings?.selected_model_id && flattenedModels().length); }
+function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text ?? ''; return div.innerHTML; }
+
+function hydrate() {
+  optionList($('#language'), settings.languages, settings.selected_language_id);
+  optionList($('#addition'), settings.additions, settings.selected_addition_id);
+  $('#auto-submit').checked = settings.auto_submit_enabled;
+  $('#model-picker span').textContent = selectedModel()?.label || '请选择模型';
+  $('#setup-overlay').hidden = configurationReady();
+  $('#setup-message').textContent = settings.providers.length ? '请选择一个已经配置 API 密钥的模型。' : '尚未添加服务商、API 密钥和模型。';
+  renderModelPicker();
+  updateConfigurationState();
+}
+
+async function updateConfigurationState() {
+  const entry = selectedModel();
+  const hasKey = entry ? await invoke('has_api_key', { providerId: entry.provider.id }) : false;
+  $('#setup-overlay').hidden = Boolean(entry && hasKey);
+  if (entry && !hasKey) $('#setup-message').textContent = '当前服务商还没有 API 密钥，请在设置中补充。';
+}
+
+async function refreshClipboardSuggestion() {
+  if ($('#source').value.trim()) return;
+  try {
+    const text = (await invoke('read_clipboard_text')).trim();
+    if (text && text.length < 10000) { $('#clipboard-card span').textContent = text; $('#clipboard-card').hidden = false; }
+  } catch (_) { /* 剪贴板暂时被其他程序占用时忽略 */ }
+}
+
+function renderModelPicker() {
+  const root = $('#model-options'); root.innerHTML = '';
+  if (!flattenedModels().length) { root.innerHTML = '<div class="empty-state"><b>尚无模型</b><span>请先在设置中添加服务商和模型。</span></div>'; return; }
+  for (const provider of settings.providers) {
+    if (!provider.models.length) continue;
+    const group = document.createElement('section'); group.className = 'model-group'; group.innerHTML = `<h4>${escapeHtml(provider.display_name)}</h4>`;
+    for (const model of provider.models) {
+      const button = document.createElement('button'); button.className = `model-option${model.id === settings.selected_model_id ? ' selected' : ''}`;
+      button.innerHTML = `<span><b>${escapeHtml(model.display_name || model.api_name)}</b><small>${escapeHtml(model.api_name)}</small></span><i>${model.id === settings.selected_model_id ? '✓' : ''}</i>`;
+      button.onclick = async () => { settings.selected_provider_id = provider.id; settings.selected_model_id = model.id; await persistSelections(); $('#model-dialog').close(); };
+      group.append(button);
+    }
+    root.append(group);
+  }
+}
+
+async function persistSelections() {
+  settings.selected_language_id = $('#language').value || null; settings.selected_addition_id = $('#addition').value || null; settings.auto_submit_enabled = $('#auto-submit').checked;
+  await invoke('save_settings', { settings }); hydrate();
+}
+
+async function translate() {
+  const source = $('#source').value.trim(), entry = selectedModel();
+  if (translating || !source) return; if (!entry) { $('#setup-overlay').hidden = false; return; }
+  translating = true; output = ''; lastSubmittedSource = source; $('#result').textContent = ''; $('#status').textContent = '◌ 正在翻译…'; $('#translate').classList.add('busy'); $('#stale').hidden = true;
+  try { await invoke('start_translation', { source, providerId: entry.provider.id, modelId: entry.model.id, languageId: $('#language').value, additionId: $('#addition').value, target: 'main' }); }
+  catch (error) { finishError(error); }
+}
+function finishError(error) { translating = false; $('#translate').classList.remove('busy'); $('#status').textContent = `⚠ ${String(error)}`; }
+
+async function init() {
+await listen('translation-delta', event => { output += event.payload; $('#result').textContent = output; });
+await listen('translation-done', () => { translating = false; $('#translate').classList.remove('busy'); $('#status').textContent = ''; });
+await listen('translation-error', event => finishError(event.payload));
+await listen('settings-changed', async () => { settings = await invoke('load_settings'); hydrate(); });
+
+$('#translate').onclick = translate;
+$('#clear').onclick = () => { $('#source').value = ''; $('#result').textContent = ''; $('#status').textContent = ''; output = ''; $('#stale').hidden = true; };
+$('#copy').onclick = () => output && invoke('write_clipboard_text', { text: output });
+$('#pin').onclick = async () => { settings.always_on_top = !settings.always_on_top; await getCurrentWindow().setAlwaysOnTop(settings.always_on_top); await persistSelections(); };
+$('#settings').onclick = $('#open-settings').onclick = $('#manage-models').onclick = () => invoke('open_settings_window');
+$('#model-picker').onclick = () => $('#model-dialog').showModal();
+document.querySelectorAll('.dialog-close').forEach(button => button.onclick = () => $('#model-dialog').close());
+$('#language').onchange = $('#addition').onchange = persistSelections; $('#auto-submit').onchange = persistSelections;
+$('#source').oninput = () => { $('#clipboard-card').hidden = true; $('#stale').hidden = !output || $('#source').value.trim() === lastSubmittedSource; clearTimeout(autoTimer); if ($('#auto-submit').checked && $('#source').value.trim()) autoTimer = setTimeout(translate, 7000); };
+$('#clipboard-card').onclick = () => { $('#source').value = $('#clipboard-card span').textContent; $('#clipboard-card').hidden = true; $('#source').dispatchEvent(new Event('input')); };
+document.addEventListener('keydown', event => { if (event.ctrlKey && event.key === 'Enter') translate(); if (event.key === 'Escape' && $('#model-dialog').open) $('#model-dialog').close(); });
+window.addEventListener('focus', refreshClipboardSuggestion);
+
+settings = await invoke('load_settings'); hydrate(); await getCurrentWindow().setAlwaysOnTop(settings.always_on_top); await refreshClipboardSuggestion();
+}
+init().catch(error => { $('#status').textContent = `⚠ 初始化失败：${String(error)}`; });

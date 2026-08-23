@@ -3,14 +3,17 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: "src",
+  clearScreen: false,
+  server: { host: "127.0.0.1", port: 1420, strictPort: true },
   build: {
     outDir: "../dist",
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        index: resolve(__dirname, "src/index.html"),
-        selection: resolve(__dirname, "src/selection.html"),
-      },
-    },
-  },
+        main: resolve("src/index.html"),
+        settings: resolve("src/settings.html"),
+        selection: resolve("src/selection.html")
+      }
+    }
+  }
 });
