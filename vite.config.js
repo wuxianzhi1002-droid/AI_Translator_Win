@@ -12,7 +12,8 @@ export default defineConfig({
       input: {
         main: resolve("src/index.html"),
         settings: resolve("src/settings.html"),
-        selection: resolve("src/selection.html")
+        selection: resolve("src/selection.html"),
+        selectionDot: resolve("src/selection-dot.html")
       }
     }
   }
