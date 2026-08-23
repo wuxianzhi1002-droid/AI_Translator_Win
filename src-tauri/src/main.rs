@@ -71,22 +71,58 @@ fn write_settings(path: &PathBuf, settings: &AppSettings) -> Result<(), String> 
 fn load_settings(state: tauri::State<State>) -> AppSettings { state.settings.lock().unwrap().clone() }
 
 #[tauri::command]
-fn set_api_key(provider_id: String, api_key: String) -> Result<(), String> {
-    keyring::Entry::new("AI.Translator.ProviderAPIKey", &provider_id).map_err(|e| e.to_string())?.set_password(&api_key).map_err(|e| e.to_string())
+async fn set_api_key(
+    provider_id: String,
+    api_key: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        keyring::Entry::new(
+            "AI.Translator.ProviderAPIKey",
+            &provider_id,
+        )
+        .map_err(|e| e.to_string())?
+        .set_password(&api_key)
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn has_api_key(provider_id: String) -> bool {
-    keyring::Entry::new("AI.Translator.ProviderAPIKey", &provider_id)
-        .ok().and_then(|entry| entry.get_password().ok()).is_some_and(|key| !key.is_empty())
+async fn has_api_key(provider_id: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        keyring::Entry::new(
+            "AI.Translator.ProviderAPIKey",
+            &provider_id,
+        )
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+        .is_some_and(|key| !key.is_empty())
+    })
+    .await
+    .unwrap_or(false)
 }
 
 #[tauri::command]
-fn delete_api_key(provider_id: String) -> Result<(), String> {
-    let entry = keyring::Entry::new("AI.Translator.ProviderAPIKey", &provider_id).map_err(|e| e.to_string())?;
-    match entry.delete_credential() { Ok(()) => Ok(()), Err(keyring::Error::NoEntry) => Ok(()), Err(e) => Err(e.to_string()) }
-}
+async fn delete_api_key(
+    provider_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = keyring::Entry::new(
+            "AI.Translator.ProviderAPIKey",
+            &provider_id,
+        )
+        .map_err(|e| e.to_string())?;
 
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 fn show_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     let window = if let Some(window) = app.get_webview_window("settings") { window } else {
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
