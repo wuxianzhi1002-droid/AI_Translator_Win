@@ -96,3 +96,6 @@ try {
 }
 
 await refreshClipboardSuggestion();
+}
+
+init().catch(error => finishError(`初始化失败：${String(error)}`));
