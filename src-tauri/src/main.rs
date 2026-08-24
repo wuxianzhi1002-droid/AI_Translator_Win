@@ -8,10 +8,11 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError},
         Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -42,6 +43,8 @@ struct AppSettings {
     selected_model_id: Option<String>, prompt_template: String, languages: Vec<Mapping>,
     selected_language_id: Option<String>, additions: Vec<Mapping>, selected_addition_id: Option<String>,
     auto_submit_enabled: bool, always_on_top: bool, network_diagnostics_enabled: bool,
+    #[serde(default = "default_true")]
+    launch_at_startup: bool,
 }
 
 impl Default for AppSettings {
@@ -56,9 +59,11 @@ impl Default for AppSettings {
         Self { schema_version: 1, providers: vec![], selected_provider_id: None, selected_model_id: None,
             prompt_template: default_prompt(), languages: vec![zh.clone(), de, en, fr], selected_language_id: Some(zh.id),
             additions: vec![none.clone(), formal, informal], selected_addition_id: Some(none.id), auto_submit_enabled: true,
-            always_on_top: false, network_diagnostics_enabled: false }
+            always_on_top: false, network_diagnostics_enabled: false, launch_at_startup: true }
     }
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Clone)]
 struct PendingSelection { text: String, x: i32, y: i32 }
@@ -82,6 +87,26 @@ fn write_settings(path: &PathBuf, settings: &AppSettings) -> Result<(), String> 
     let bytes = serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?;
     fs::write(path, bytes).map_err(|e| e.to_string())
 }
+
+#[cfg(windows)]
+fn sync_launch_at_startup(enabled: bool) -> Result<(), String> {
+    use windows_registry::CURRENT_USER;
+    const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    const VALUE_NAME: &str = "AI Translator Windows";
+    let key = CURRENT_USER.create(RUN_KEY).map_err(|e| e.to_string())?;
+    if enabled {
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        key.set_string(VALUE_NAME, &format!("\"{}\"", executable.display()))
+            .map_err(|e| e.to_string())
+    } else if key.get_string(VALUE_NAME).is_ok() {
+        key.remove_value(VALUE_NAME).map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn sync_launch_at_startup(_enabled: bool) -> Result<(), String> { Ok(()) }
 
 #[tauri::command]
 fn load_settings(state: tauri::State<State>) -> AppSettings { state.settings.lock().unwrap().clone() }
@@ -111,7 +136,9 @@ fn close_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn save_settings(app: tauri::AppHandle, state: tauri::State<State>, settings: AppSettings) -> Result<(), String> {
     validate_prompt(&settings.prompt_template)?;
-    write_settings(&state.settings_path, &settings)?; *state.settings.lock().unwrap() = settings;
+    sync_launch_at_startup(settings.launch_at_startup)?;
+    write_settings(&state.settings_path, &settings)?;
+    *state.settings.lock().unwrap() = settings;
     let _ = app.emit("settings-changed", ());
     Ok(())
 }
@@ -258,18 +285,132 @@ fn hide_selection_overlays(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("selection") { let _ = window.hide(); }
 }
 
-fn start_mouse_selection_monitor(app: tauri::AppHandle) {
-    thread::spawn(move || {
-        #[cfg(windows)]
-        {
-            use windows::Win32::Foundation::POINT;
-            use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
-            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+struct SelectionProbe {
+    generation: u64,
+    x: i32,
+    y: i32,
+    fallback_allowed: bool,
+}
 
+#[cfg(windows)]
+fn selection_text_from_element(
+    mut element: uiautomation::UIElement,
+    walker: &uiautomation::UITreeWalker,
+) -> Option<String> {
+    use uiautomation::patterns::UITextPattern;
+
+    for _ in 0..12 {
+        if element.is_password().unwrap_or(false) {
+            return None;
+        }
+        if let Ok(pattern) = element.get_pattern::<UITextPattern>() {
+            if let Ok(ranges) = pattern.get_selection() {
+                let parts: Vec<String> = ranges
+                    .iter()
+                    .filter_map(|range| range.get_text(50_000).ok())
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+                    .collect();
+                if !parts.is_empty() {
+                    return Some(parts.join("\n"));
+                }
+            }
+        }
+        element = walker.get_parent(&element).ok()?;
+    }
+    None
+}
+
+#[cfg(windows)]
+fn read_uia_selection(
+    automation: &uiautomation::UIAutomation,
+    walker: &uiautomation::UITreeWalker,
+    x: i32,
+    y: i32,
+) -> Option<String> {
+    use uiautomation::types::Point;
+
+    automation
+        .element_from_point(Point::new(x, y))
+        .ok()
+        .and_then(|element| selection_text_from_element(element, walker))
+        .or_else(|| {
+            automation
+                .get_focused_element()
+                .ok()
+                .and_then(|element| selection_text_from_element(element, walker))
+        })
+}
+
+#[cfg(windows)]
+fn show_selection_dot(app: &tauri::AppHandle, text: String, x: i32, y: i32) {
+    let state = app.state::<State>();
+    if state.selection_pinned.load(Ordering::SeqCst) {
+        return;
+    }
+    *state.pending_selection.lock().unwrap() = Some(PendingSelection { text, x, y });
+    if let Some(window) = app.get_webview_window("selection") {
+        let _ = app.emit("selection-dot-ready", ());
+        let _ = window.set_decorations(false);
+        let _ = window.set_resizable(false);
+        let _ = window.set_size(tauri::LogicalSize::new(18.0, 18.0));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x + 7, y + 9));
+        let _ = window.set_always_on_top(true);
+        let _ = window.show();
+    }
+}
+
+#[cfg(windows)]
+fn selection_probe_worker(app: tauri::AppHandle, receiver: Receiver<SelectionProbe>) {
+    let automation = uiautomation::UIAutomation::new().ok();
+    let walker = automation.as_ref().and_then(|uia| uia.get_raw_view_walker().ok());
+
+    while let Ok(mut probe) = receiver.recv() {
+        loop {
+            match receiver.recv_timeout(Duration::from_millis(120)) {
+                Ok(newer) => probe = newer,
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        }
+
+        let state = app.state::<State>();
+        if state.selection_generation.load(Ordering::SeqCst) != probe.generation
+            || state.selection_pinned.load(Ordering::SeqCst)
+        {
+            continue;
+        }
+
+        let text = match (&automation, &walker) {
+            (Some(uia), Some(tree)) => read_uia_selection(uia, tree, probe.x, probe.y),
+            _ => None,
+        };
+        if text.is_none() && !probe.fallback_allowed {
+            continue;
+        }
+        show_selection_dot(&app, text.unwrap_or_default(), probe.x, probe.y);
+    }
+}
+
+fn start_mouse_selection_monitor(app: tauri::AppHandle) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+        use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetDoubleClickTime};
+
+        let (sender, receiver) = mpsc::sync_channel::<SelectionProbe>(4);
+        let worker_app = app.clone();
+        thread::spawn(move || selection_probe_worker(worker_app, receiver));
+
+        thread::spawn(move || {
             let mut was_down = false;
             let mut start = POINT::default();
             let mut started_in_app = false;
             let mut started_as_text = false;
+            let mut previous_release: Option<(Instant, POINT)> = None;
 
             loop {
                 let down = unsafe { GetAsyncKeyState(0x01) < 0 };
@@ -277,39 +418,49 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
                 unsafe { let _ = GetCursorPos(&mut cursor); }
 
                 if down && !was_down {
-                    app.state::<State>().selection_generation.fetch_add(1, Ordering::SeqCst);
+                    app.state::<State>()
+                        .selection_generation
+                        .fetch_add(1, Ordering::SeqCst);
                     start = cursor;
                     started_in_app = point_in_app_window(&app, cursor.x, cursor.y);
                     started_as_text = !started_in_app && text_cursor_active();
-                    if !started_in_app { hide_selection_overlays(&app); }
+                    if !started_in_app {
+                        hide_selection_overlays(&app);
+                    }
                 } else if !down && was_down {
+                    let now = Instant::now();
+                    let double_click_ms = unsafe { GetDoubleClickTime() } as u64;
+                    let double_click = previous_release
+                        .map(|(at, point)| {
+                            now.duration_since(at) <= Duration::from_millis(double_click_ms)
+                                && (cursor.x - point.x).abs() <= 8
+                                && (cursor.y - point.y).abs() <= 8
+                        })
+                        .unwrap_or(false);
+                    previous_release = Some((now, cursor));
+
                     let dx = (cursor.x - start.x).abs();
                     let dy = (cursor.y - start.y).abs();
-                    let pinned = app.state::<State>().selection_pinned.load(Ordering::SeqCst);
-                    if !started_in_app && started_as_text && !pinned && (dx >= 6 || dy >= 6) {
-                        let x = cursor.x;
-                        let y = cursor.y;
-                        *app.state::<State>().pending_selection.lock().unwrap() =
-                            Some(PendingSelection { text: String::new(), x, y });
-                        if let Some(window) = app.get_webview_window("selection") {
-                            let _ = app.emit("selection-dot-ready", ());
-                            let _ = window.set_decorations(false);
-                            let _ = window.set_resizable(false);
-                            let _ = window.set_size(tauri::LogicalSize::new(18.0, 18.0));
-                            let _ = window.set_position(tauri::PhysicalPosition::new(x + 7, y + 9));
-                            let _ = window.set_always_on_top(true);
-                            let _ = window.show();
-                        }
+                    let fallback_allowed =
+                        started_as_text && (double_click || dx >= 4 || dy >= 4);
+                    let state = app.state::<State>();
+                    if !started_in_app && !state.selection_pinned.load(Ordering::SeqCst) {
+                        let probe = SelectionProbe {
+                            generation: state.selection_generation.load(Ordering::SeqCst),
+                            x: cursor.x,
+                            y: cursor.y,
+                            fallback_allowed,
+                        };
+                        let _ = sender.try_send(probe);
                     }
                 }
 
                 was_down = down;
-                thread::sleep(Duration::from_millis(24));
+                thread::sleep(Duration::from_millis(16));
             }
-        }
-    });
+        });
+    }
 }
-
 fn popup_size(source_len: u32, result_len: u32, source_lines: u32, result_lines: u32) -> (f64, f64) {
     let longest = source_len.max(result_len);
     let width = if longest < 100 { 460.0 } else if longest < 320 { 540.0 } else { 620.0 };
@@ -420,6 +571,8 @@ fn main() {
                     button:MouseButton::Left,button_state:MouseButtonState::Up,..
                 }=event{let _=show_settings_window(tray.app_handle());})
                 .build(app)?;
+            let launch_at_startup = app.state::<State>().settings.lock().unwrap().launch_at_startup;
+            let _ = sync_launch_at_startup(launch_at_startup);
             WebviewWindowBuilder::new(app, "selection", WebviewUrl::App("selection.html".into()))
                 .title("划词翻译").inner_size(18.0, 18.0).decorations(false)
                 .transparent(true).shadow(false).resizable(false).always_on_top(true)
