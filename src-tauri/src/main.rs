@@ -399,7 +399,7 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
     {
         use windows::Win32::Foundation::POINT;
         use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
-        use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetDoubleClickTime};
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
         let (sender, receiver) = mpsc::sync_channel::<SelectionProbe>(4);
         let worker_app = app.clone();
@@ -429,10 +429,9 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
                     }
                 } else if !down && was_down {
                     let now = Instant::now();
-                    let double_click_ms = unsafe { GetDoubleClickTime() } as u64;
                     let double_click = previous_release
                         .map(|(at, point)| {
-                            now.duration_since(at) <= Duration::from_millis(double_click_ms)
+                            now.duration_since(at) <= Duration::from_millis(500)
                                 && (cursor.x - point.x).abs() <= 8
                                 && (cursor.y - point.y).abs() <= 8
                         })
