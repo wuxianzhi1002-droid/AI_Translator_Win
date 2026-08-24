@@ -1,6 +1,6 @@
 [package]
 name = "ai-translator"
-version = "0.4.1"
+version = "0.4.2"
 description = "Lightweight Windows AI translator"
 edition = "2021"
 

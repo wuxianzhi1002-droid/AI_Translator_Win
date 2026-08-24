@@ -298,7 +298,7 @@ fn popup_size(source_len: u32, result_len: u32, source_lines: u32, result_lines:
     let chars_per_line = ((width - 54.0) / 8.0_f64).max(34.0) as u32;
     let source_visual = source_lines.max((source_len / chars_per_line) + 1).clamp(1, 6);
     let result_visual = result_lines.max((result_len / chars_per_line) + 1).clamp(1, 18);
-    let height = (210.0 + source_visual as f64 * 21.0 + result_visual as f64 * 25.0).clamp(300.0, 720.0);
+    let height = (170.0 + source_visual as f64 * 21.0 + result_visual as f64 * 25.0).clamp(270.0, 680.0);
     (width, height)
 }
 

@@ -48,7 +48,7 @@ async function fitContent(sequence) {
   const width = longest < 100 ? 460 : (longest < 320 ? 540 : 620);
   const roughLines = lineCount(source) + lineCount(output) +
     Math.ceil((charCount(source) + charCount(output)) / Math.max(36, Math.floor((width - 54) / 8)));
-  const roughHeight = Math.max(320, Math.min(720, 235 + roughLines * 24));
+  const roughHeight = Math.max(280, Math.min(680, 190 + roughLines * 24));
   await invoke('resize_selection_popup', { width, height: roughHeight });
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   if (sequence !== resizeSequence) return;
@@ -56,12 +56,11 @@ async function fitContent(sequence) {
   const sourceHeight = Math.max(42, Math.min(160, rangeHeight($('#source')) + 22));
   const resultHeight = Math.max(68, Math.min(500, rangeHeight($('#result')) + 24));
   const fixedHeight =
-    $('#card > header').offsetHeight +
     $('.preferences').offsetHeight +
     $('footer').offsetHeight +
     sourceHeight + resultHeight + 30;
   const nativeFrame = 42;
-  const height = Math.max(300, Math.min(760, fixedHeight + nativeFrame));
+  const height = Math.max(280, Math.min(720, fixedHeight + nativeFrame));
   await invoke('resize_selection_popup', { width, height });
 }
 
@@ -168,7 +167,6 @@ async function init() {
   $('#language').addEventListener('change', startTranslation);
   $('#addition').addEventListener('change', startTranslation);
   $('#pin').onclick = () => setPinned(!pinned);
-  $('#close').onclick = closePopup;
   $('#copy').onclick = async () => {
     if (!output) return;
     await invoke('write_clipboard_text', { text: output });
