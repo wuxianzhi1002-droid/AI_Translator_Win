@@ -269,6 +269,7 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
             let mut was_down = false;
             let mut start = POINT::default();
             let mut started_in_app = false;
+            let mut started_as_text = false;
 
             loop {
                 let down = unsafe { GetAsyncKeyState(0x01) < 0 };
@@ -279,12 +280,13 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
                     app.state::<State>().selection_generation.fetch_add(1, Ordering::SeqCst);
                     start = cursor;
                     started_in_app = point_in_app_window(&app, cursor.x, cursor.y);
+                    started_as_text = !started_in_app && text_cursor_active();
                     if !started_in_app { hide_selection_overlays(&app); }
                 } else if !down && was_down {
                     let dx = (cursor.x - start.x).abs();
                     let dy = (cursor.y - start.y).abs();
                     let pinned = app.state::<State>().selection_pinned.load(Ordering::SeqCst);
-                    if !started_in_app && !pinned && (dx >= 6 || dy >= 6) && text_cursor_active() {
+                    if !started_in_app && started_as_text && !pinned && (dx >= 6 || dy >= 6) {
                         let x = cursor.x;
                         let y = cursor.y;
                         *app.state::<State>().pending_selection.lock().unwrap() =
