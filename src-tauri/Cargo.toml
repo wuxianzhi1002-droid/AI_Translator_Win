@@ -1,6 +1,6 @@
 [package]
 name = "ai-translator"
-version = "0.4.3"
+version = "0.5.0"
 description = "Lightweight Windows AI translator"
 edition = "2021"
 
@@ -21,6 +21,10 @@ log = "0.4"
 arboard = "3"
 
 [target.'cfg(windows)'.dependencies]
+uiautomation = { version = "0.25", default-features = false, features = ["pattern", "input"] }
+windows-registry = "0.6"
+# uiautomation 0.25 references this API from its input module but does not forward the feature.
+windows-uia-compat = { package = "windows", version = "0.62", features = ["Win32_UI_WindowsAndMessaging"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Com",
