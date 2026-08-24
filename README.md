@@ -37,6 +37,10 @@ v0.5.0 已移除旧版主翻译窗口、全局快捷键划词以及翻译卡片�
 
 软件需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常已经安装；若界面无法打开，可从 [Microsoft WebView2 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装运行时。
 
+### 从 release 下载
+在仓库的主页右边下载release的ai-translator.exe，在本地双击即可运行，也可打开文件夹中的nsis安装程序安装到本地；
+
+
 ## 快速使用
 
 1. 安装并启动软件。
