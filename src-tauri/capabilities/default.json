@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main, settings and selection translation windows",
-  "windows": ["main", "settings", "selection"],
+  "description": "Settings and global selection translation window",
+  "windows": [
+    "settings",
+    "selection"
+  ],
   "permissions": [
     "core:default",
     "core:event:default",

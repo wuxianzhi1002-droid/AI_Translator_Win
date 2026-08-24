@@ -6,20 +6,32 @@
   <title>划词翻译</title>
   <link rel="stylesheet" href="selection.css">
 </head>
-<body>
-  <header>
-    <div class="brand"><span class="logo">译</span><strong>划词翻译</strong></div>
-    <div class="actions">
-      <button id="pin" title="保持窗口">◇</button>
-      <button id="close" title="关闭">×</button>
+<body class="dot-mode">
+  <button id="selection-dot" aria-label="翻译选中文字" title="悬停翻译"></button>
+
+  <main id="card">
+    <header id="drag-handle">
+      <div class="brand"><span class="logo">译</span><strong>划词翻译</strong></div>
+      <div class="header-actions">
+        <button id="settings" title="设置">⚙</button>
+        <button id="pin" title="置顶">◇</button>
+        <button id="close" title="关闭">×</button>
+      </div>
+    </header>
+
+    <div class="preferences">
+      <label>目标语言<select id="language"></select></label>
+      <label>附加要求<select id="addition"></select></label>
     </div>
-  </header>
-  <section id="source"></section>
-  <article id="result"><span class="placeholder">正在翻译…</span></article>
-  <footer>
-    <span id="status"></span>
-    <button id="copy">复制译文</button>
-  </footer>
+
+    <section id="source"></section>
+    <article id="result"><span class="placeholder">正在翻译…</span></article>
+
+    <footer>
+      <span id="status"></span>
+      <button id="copy">复制译文</button>
+    </footer>
+  </main>
   <script type="module" src="selection.js"></script>
 </body>
 </html>
