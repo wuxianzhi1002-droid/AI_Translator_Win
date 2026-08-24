@@ -101,6 +101,14 @@ fn show_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
 fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> { show_settings_window(&app) }
 
 #[tauri::command]
+fn close_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    app.get_webview_window("settings")
+        .ok_or_else(|| "设置窗口未初始化".to_string())?
+        .hide()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn save_settings(app: tauri::AppHandle, state: tauri::State<State>, settings: AppSettings) -> Result<(), String> {
     validate_prompt(&settings.prompt_template)?;
     write_settings(&state.settings_path, &settings)?; *state.settings.lock().unwrap() = settings;
@@ -229,6 +237,21 @@ fn point_in_app_window(app: &tauri::AppHandle, x: i32, y: i32) -> bool {
         .any(|label| point_in_window(app, label, x, y))
 }
 
+#[cfg(windows)]
+fn text_cursor_active() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorInfo, LoadCursorW, CURSORINFO, IDC_IBEAM};
+    let mut info = CURSORINFO {
+        cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        if GetCursorInfo(&mut info).is_err() { return false; }
+        LoadCursorW(None, IDC_IBEAM)
+            .map(|cursor| info.hCursor == cursor)
+            .unwrap_or(false)
+    }
+}
+
 fn hide_selection_overlays(app: &tauri::AppHandle) {
     let state = app.state::<State>();
     if state.selection_pinned.load(Ordering::SeqCst) { return; }
@@ -261,27 +284,20 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
                     let dx = (cursor.x - start.x).abs();
                     let dy = (cursor.y - start.y).abs();
                     let pinned = app.state::<State>().selection_pinned.load(Ordering::SeqCst);
-                    if !started_in_app && !pinned && (dx >= 6 || dy >= 6) {
-                        let generation = app.state::<State>().selection_generation.load(Ordering::SeqCst);
-                        let app_handle = app.clone();
+                    if !started_in_app && !pinned && (dx >= 6 || dy >= 6) && text_cursor_active() {
                         let x = cursor.x;
                         let y = cursor.y;
-                        tauri::async_runtime::spawn(async move {
-                            tokio::time::sleep(Duration::from_millis(140)).await;
-                            if app_handle.state::<State>().selection_generation.load(Ordering::SeqCst) != generation { return; }
-                            let Ok(text) = capture_selection().await else { return };
-                            if app_handle.state::<State>().selection_generation.load(Ordering::SeqCst) != generation { return; }
-                            *app_handle.state::<State>().pending_selection.lock().unwrap() =
-                                Some(PendingSelection { text, x, y });
-                            if let Some(window) = app_handle.get_webview_window("selection") {
-                                let _ = app_handle.emit("selection-dot-ready", ());
-                                let _ = window.set_decorations(false);
-                                let _ = window.set_resizable(false);
-                                let _ = window.set_size(tauri::LogicalSize::new(18.0, 18.0));
-                                let _ = window.set_position(tauri::PhysicalPosition::new(x + 7, y + 9));
-                                let _ = window.show();
-                            }
-                        });
+                        *app.state::<State>().pending_selection.lock().unwrap() =
+                            Some(PendingSelection { text: String::new(), x, y });
+                        if let Some(window) = app.get_webview_window("selection") {
+                            let _ = app.emit("selection-dot-ready", ());
+                            let _ = window.set_decorations(false);
+                            let _ = window.set_resizable(false);
+                            let _ = window.set_size(tauri::LogicalSize::new(18.0, 18.0));
+                            let _ = window.set_position(tauri::PhysicalPosition::new(x + 7, y + 9));
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.show();
+                        }
                     }
                 }
 
@@ -303,8 +319,17 @@ fn popup_size(source_len: u32, result_len: u32, source_lines: u32, result_lines:
 }
 
 #[tauri::command]
-fn open_selection_popup(app: tauri::AppHandle, state: tauri::State<State>) -> Result<(), String> {
-    let pending = state.pending_selection.lock().unwrap().clone().ok_or("没有可翻译的选中文字")?;
+async fn open_selection_popup(app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<(), String> {
+    let generation = state.selection_generation.load(Ordering::SeqCst);
+    let mut pending = state.pending_selection.lock().unwrap().clone().ok_or("没有可翻译的选中文字")?;
+    if pending.text.trim().is_empty() {
+        let text = capture_selection().await?;
+        if state.selection_generation.load(Ordering::SeqCst) != generation {
+            return Err("选区已经改变".into());
+        }
+        pending.text = text;
+        *state.pending_selection.lock().unwrap() = Some(pending.clone());
+    }
     state.selection_pinned.store(false, Ordering::SeqCst);
     let window = app.get_webview_window("selection").ok_or("划词翻译窗口未初始化")?;
     let source_len = pending.text.chars().count() as u32;
@@ -314,7 +339,7 @@ fn open_selection_popup(app: tauri::AppHandle, state: tauri::State<State>) -> Re
     window.set_resizable(true).map_err(|e| e.to_string())?;
     window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     window.set_position(tauri::PhysicalPosition::new(pending.x + 14, pending.y + 16)).map_err(|e| e.to_string())?;
-    window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    window.set_always_on_top(false).map_err(|e| e.to_string())?;
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     app.emit("selection-start", &pending.text).map_err(|e| e.to_string())
@@ -350,7 +375,7 @@ fn resize_selection_popup(app: tauri::AppHandle, width: f64, height: f64) -> Res
 fn set_selection_pinned(app: tauri::AppHandle, state: tauri::State<State>, pinned: bool) -> Result<(), String> {
     state.selection_pinned.store(pinned, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("selection") {
-        window.set_always_on_top(true).map_err(|e| e.to_string())?;
+        window.set_always_on_top(pinned).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -402,16 +427,23 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            load_settings, save_settings, open_settings_window, write_clipboard_text,
+            load_settings, save_settings, open_settings_window, close_settings_window, write_clipboard_text,
             open_selection_popup, translate_selection, resize_selection_popup,
             set_selection_pinned, dismiss_selection_popup
         ])
         .on_window_event(|window,event|{
-            if window.label()=="selection" {
-                if let tauri::WindowEvent::CloseRequested{api,..}=event {
-                    api.prevent_close();
-                    window.app_handle().state::<State>().selection_pinned.store(false, Ordering::SeqCst);
-                    let _=window.hide();
+            if let tauri::WindowEvent::CloseRequested{api,..}=event {
+                match window.label() {
+                    "selection" => {
+                        api.prevent_close();
+                        window.app_handle().state::<State>().selection_pinned.store(false, Ordering::SeqCst);
+                        let _=window.hide();
+                    }
+                    "settings" => {
+                        api.prevent_close();
+                        let _=window.hide();
+                    }
+                    _ => {}
                 }
             }
         })

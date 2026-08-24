@@ -1,50 +1,86 @@
-# AI 翻译工具 Windows 版
+# AI 划词翻译 Windows
 
-这是 `TranslatorMac` 的 Windows/Rust 移植工程。Rust 负责模型请求、流式响应、API Key、全局快捷键、剪贴板和窗口管理，界面由 Tauri 2 使用 Windows 自带的 WebView2 显示，不包含 Electron/Chromium 运行时。
+一个使用 Rust + Tauri 2 编写的 Windows 全局划词翻译工具。它不提供常驻的主翻译窗口：鼠标选中文字后，在选区附近显示一个红点；将鼠标悬停到红点上才会读取选区并打开翻译卡片。
 
-## 已实现功能
+当前版本：**v0.4.3**
 
-- 原版左右双栏翻译界面、托盘式后台运行和窗口置顶。
-- 多服务商、多模型、目标语言、附加要求和提示词配置。
-- OpenAI Responses API 与兼容 Chat Completions。
-- OpenAI、阿里云百炼、智谱 AI、小米 MiMo 的翻译优化参数。
-- 流式显示、手动提交、7 秒自动提交、复制译文。
-- API Key 通过 Windows Credential Manager 保存，不写入设置 JSON。
-- 全局划词翻译：默认 `Ctrl+Alt+T`，可修改快捷键。
-- 在鼠标附近弹出划词译文，可复制、固定或关闭。
-- 设置窗口、服务商/模型双栏管理、完整编辑表单和集中式模型选择窗口与 macOS 原版保持一致。
-- 首次运行自动打开独立设置窗口；未完成模型配置时主窗口显示引导层。
+## 功能
 
-## 划词翻译的工作方式
+- Windows 全局鼠标划词，选区附近只显示一个小红点。
+- 悬停红点自动打开翻译卡片，无需再次点击。
+- 流式显示译文。
+- 在卡片内选择目标语言和附加要求。
+- 卡片可拖动、手动调整大小，也会按本次原文和译文自动调整初始大小。
+- 可置顶；未置顶时点击其他程序会自动隐藏。
+- 一键复制译文。
+- 系统托盘打开设置或退出程序。
+- 管理多个 OpenAI 兼容服务商和模型。
+- 支持 Responses API 与 Chat Completions API。
 
-1. 在浏览器、Word、PDF 阅读器、聊天软件或编辑器中选中文字。
-2. 按 `Ctrl+Alt+T`。
-3. 程序模拟一次 `Ctrl+C`，读取文字后恢复原来的纯文本剪贴板内容。
-4. 译文窗口显示在鼠标附近。
+本版本已经移除旧的主翻译窗口、全局快捷键划词和卡片内的设置入口。设置统一从系统托盘打开。
 
-多数支持标准复制操作的软件都可以使用。管理员权限程序、受保护页面、游戏、自绘控件或禁止复制的 PDF 可能无法读取选区。当前版本只保证恢复剪贴板中的纯文本；如果剪贴板原来只有图片或复杂富文本，触发划词翻译后无法完整恢复全部格式。
+## 使用方法
 
-## Windows 构建
+1. 首次启动后，在系统托盘找到 **AI 划词翻译**，打开“设置”。
+2. 添加服务商、API 地址、API Key 和模型真实名称，保存设置。
+3. 在浏览器、Office、PDF 阅读器、编辑器等程序中用鼠标拖动选中文字。
+4. 将鼠标移到选区附近出现的红点上。
+5. 翻译卡片自动打开并开始翻译。
+
+卡片右上角的 Windows 标题栏用于拖动、缩放和关闭。卡片中的置顶按钮位于“附加要求”右侧。
+
+## 为什么不会再干扰 Snipaste
+
+旧实现只要检测到鼠标拖动，就立即模拟一次 `Ctrl+C` 读取选区。Snipaste 截图时同样会发生鼠标拖动，因此这个模拟复制会被 Snipaste 接收，导致截图提前完成或窗口关闭。
+
+v0.4.3 做了两层限制：
+
+- 只有鼠标位于标准文本 I-beam 光标区域时，才把拖动视为文字选择；
+- 松开鼠标时只显示红点，不复制内容；只有悬停红点后才模拟 `Ctrl+C`。
+
+因此截图、绘图和框选操作不会因普通拖动而触发复制。若某个软件使用自绘文字光标，它可能无法被自动识别。
+
+## 设置与数据
+
+设置文件位于：
+
+```text
+%LOCALAPPDATA%\AI.Translator\settings.json
+```
+
+当前版本的服务商配置和 API Key 保存在这个本地 JSON 文件中，仅供当前 Windows 用户使用。请不要把该文件上传、共享或提交到 Git。划词内容只有在悬停红点、开始翻译后才会发送到你配置的模型服务商。
+
+“保存”和窗口关闭按钮都会隐藏设置窗口，之后可从系统托盘再次打开。
+
+## 服务商配置
+
+基础网址填写服务商的 OpenAI 兼容 API 根地址，例如：
+
+```text
+https://api.openai.com/v1
+```
+
+模型“真实名称”必须与服务商文档一致。HTTP 状态码由服务商返回，例如：
+
+- `401/403`：API Key、权限或接口地址有误；
+- `402 Insufficient account balance`：服务商账户余额不足，需要充值或更换有额度的 Key；
+- `429`：请求频率或额度限制。
+
+## 本地构建
 
 要求：
 
-- Windows 10 1803 或更高版本 / Windows 11；
-- Node.js 20+；
-- Rust 1.77.2+；
-- Visual Studio Build Tools 2022，勾选“使用 C++ 的桌面开发”；
-- WebView2 Runtime（Windows 11 默认自带，大多数 Windows 10 设备也已安装）。
+- Windows 10/11；
+- Node.js 20 或更高版本；
+- Rust 1.77.2 或更高版本；
+- Visual Studio Build Tools 2022，并勾选“使用 C++ 的桌面开发”；
+- WebView2 Runtime。
 
-在 PowerShell 中运行：
+PowerShell：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\build-windows.ps1
-```
-
-生成的 NSIS 安装包位于：
-
-```text
-src-tauri\target\release\bundle
 ```
 
 开发运行：
@@ -54,13 +90,42 @@ npm install
 npm run dev
 ```
 
-## 数据位置
+NSIS 安装包生成到：
 
-- 普通设置：`%LOCALAPPDATA%\AI.Translator\settings.json`
-- API Key：Windows Credential Manager，服务名 `AI.Translator.ProviderAPIKey`
+```text
+src-tauri\target\release\bundle\nsis
+```
 
-## GitHub Actions
+## GitHub Actions 构建
 
-仓库已包含 `.github/workflows/build-windows.yml`。推送到 `main`、提交 PR 或手动运行工作流时，会依次验证三个前端窗口、运行 Rust 测试并生成 NSIS 安装包。
+仓库包含 `.github/workflows/build-windows.yml`。推送分支、提交 PR 或手动运行工作流后，会在 Windows Runner 上检查前端、编译 Rust，并生成可下载的 NSIS 安装包。
 
-发布前建议在真实 Windows 10 和 Windows 11 各执行一次安装、托盘、快捷键冲突和多显示器弹窗测试。
+打开仓库的 **Actions** 页面，进入成功的 **Build Windows x64** 任务，在页面底部下载 Artifact。
+
+## 项目结构
+
+```text
+src/
+  selection.html/css/js   划词红点和翻译卡片
+  settings.html/css/js    设置界面
+src-tauri/
+  src/main.rs             Windows 选区检测、窗口、托盘和模型请求
+  tauri.conf.json         Tauri 窗口及安装包配置
+.github/workflows/
+  build-windows.yml       Windows CI 打包
+```
+
+## 已知限制
+
+- 管理员权限程序与普通权限程序之间可能受 Windows UIPI 限制；需要让两边以相同权限运行。
+- 禁止复制的 PDF、受保护页面、游戏和部分自绘控件可能无法读取文字。
+- 仅恢复原剪贴板中的纯文本；图片、文件列表或复杂富文本不能保证完整恢复。
+- 自动检测依赖标准 I-beam 文本光标，因此部分自绘界面需要后续做专门兼容。
+
+## 发布前建议测试
+
+- Chrome/Edge、Word/WPS、常用 PDF 阅读器和代码编辑器；
+- Snipaste/F1 截图、截图框选与复制；
+- 单屏、多显示器、不同缩放比例；
+- 置顶/非置顶、拖动、缩放、外部点击自动隐藏；
+- 设置窗口的保存、关闭和从托盘重新打开。
