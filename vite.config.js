@@ -10,7 +10,6 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: resolve("src/index.html"),
         settings: resolve("src/settings.html"),
         selection: resolve("src/selection.html")
       }
