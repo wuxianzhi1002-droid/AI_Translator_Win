@@ -286,7 +286,7 @@ src-tauri\target\release\bundle\nsis
 推送分支、提交 Pull Request 或手动运行工作流后，GitHub 会在 Windows Runner 上：
 
 1. 安装 Node.js 和 Rust；
-2. 棄查前端代码；
+2. 检查前端代码；
 3. 编译 Rust/Tauri；
 4. 生成 x64 NSIS 安装包；
 5. 上传 **AI-Translator-Windows-x64** Artifact。
