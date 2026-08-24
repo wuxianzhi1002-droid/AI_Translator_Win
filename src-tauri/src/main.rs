@@ -275,6 +275,8 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
                                 Some(PendingSelection { text, x, y });
                             if let Some(window) = app_handle.get_webview_window("selection") {
                                 let _ = app_handle.emit("selection-dot-ready", ());
+                                let _ = window.set_decorations(false);
+                                let _ = window.set_resizable(false);
                                 let _ = window.set_size(tauri::LogicalSize::new(18.0, 18.0));
                                 let _ = window.set_position(tauri::PhysicalPosition::new(x + 7, y + 9));
                                 let _ = window.show();
@@ -292,11 +294,11 @@ fn start_mouse_selection_monitor(app: tauri::AppHandle) {
 
 fn popup_size(source_len: u32, result_len: u32, source_lines: u32, result_lines: u32) -> (f64, f64) {
     let longest = source_len.max(result_len);
-    let width = if longest < 90 { 400.0 } else if longest < 260 { 480.0 } else { 560.0 };
-    let chars_per_line = ((width - 54.0) / 8.0_f64).max(28.0) as u32;
-    let source_visual = source_lines.max((source_len / chars_per_line) + 1).clamp(1, 4);
-    let result_visual = result_lines.max((result_len / chars_per_line) + 1).clamp(1, 14);
-    let height = (150.0 + source_visual as f64 * 18.0 + result_visual as f64 * 22.0).clamp(230.0, 560.0);
+    let width = if longest < 100 { 460.0 } else if longest < 320 { 540.0 } else { 620.0 };
+    let chars_per_line = ((width - 54.0) / 8.0_f64).max(34.0) as u32;
+    let source_visual = source_lines.max((source_len / chars_per_line) + 1).clamp(1, 6);
+    let result_visual = result_lines.max((result_len / chars_per_line) + 1).clamp(1, 18);
+    let height = (210.0 + source_visual as f64 * 21.0 + result_visual as f64 * 25.0).clamp(300.0, 720.0);
     (width, height)
 }
 
@@ -308,6 +310,8 @@ fn open_selection_popup(app: tauri::AppHandle, state: tauri::State<State>) -> Re
     let source_len = pending.text.chars().count() as u32;
     let source_lines = pending.text.lines().count().max(1) as u32;
     let (width, height) = popup_size(source_len, 0, source_lines, 1);
+    window.set_decorations(true).map_err(|e| e.to_string())?;
+    window.set_resizable(true).map_err(|e| e.to_string())?;
     window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     window.set_position(tauri::PhysicalPosition::new(pending.x + 14, pending.y + 16)).map_err(|e| e.to_string())?;
     window.set_always_on_top(true).map_err(|e| e.to_string())?;
@@ -335,17 +339,11 @@ async fn translate_selection(app: tauri::AppHandle, state: tauri::State<'_, Stat
 }
 
 #[tauri::command]
-fn resize_selection_popup(app: tauri::AppHandle, source_len: u32, result_len: u32,
-    source_lines: u32, result_lines: u32) -> Result<(), String> {
+fn resize_selection_popup(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app.get_webview_window("selection").ok_or("划词翻译窗口未初始化")?;
-    let (width, height) = popup_size(source_len, result_len, source_lines, result_lines);
+    let width = width.clamp(400.0, 760.0);
+    let height = height.clamp(280.0, 760.0);
     window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn start_selection_drag(app: tauri::AppHandle) -> Result<(), String> {
-    app.get_webview_window("selection").ok_or("划词翻译窗口未初始化")?
-        .start_dragging().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -406,8 +404,17 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             load_settings, save_settings, open_settings_window, write_clipboard_text,
             open_selection_popup, translate_selection, resize_selection_popup,
-            start_selection_drag, set_selection_pinned, dismiss_selection_popup
+            set_selection_pinned, dismiss_selection_popup
         ])
+        .on_window_event(|window,event|{
+            if window.label()=="selection" {
+                if let tauri::WindowEvent::CloseRequested{api,..}=event {
+                    api.prevent_close();
+                    window.app_handle().state::<State>().selection_pinned.store(false, Ordering::SeqCst);
+                    let _=window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!()).expect("error while running AI Translator");
 }
 

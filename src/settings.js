@@ -55,7 +55,7 @@ document.querySelectorAll('.provider-cancel').forEach(b=>b.onclick=()=>$('#provi
 $('#provider-preset').onchange=()=>{const value=$('#provider-preset').value;$('#provider-optimize').checked=value!=='generic';if(value==='openAI')$('#provider-style').value='responses';else if(value!=='generic')$('#provider-style').value='chatCompletions'};
 $('#prompt').oninput=validatePrompt;$('#prompt-reset').onclick=()=>{$('#prompt').value=defaultPrompt;validatePrompt()};
 $('#language-add').onclick=()=>{settings.languages.push({id:id(),display_name:'新语言',prompt_value:''});renderMappings()};$('#addition-add').onclick=()=>{settings.additions.push({id:id(),display_name:'新要求',prompt_value:''});renderMappings()};
-$('#close-window').onclick=()=>getCurrentWindow().close();
+$('#close-window').onclick=()=>getCurrentWindow().hide();
 $('#save-settings').onclick=async()=>{if(!validatePrompt()){document.querySelector('[data-tab="prompt"]').click();return}settings.prompt_template=$('#prompt').value;settings.selected_provider_id=selectedProviderId||null;settings.selected_model_id=selectedModelId||null;try{await invoke('save_settings',{settings});$('#save-state').textContent='已保存';setTimeout(()=>$('#save-state').textContent='',1800)}catch(error){$('#global-error').hidden=false;$('#global-error').textContent=String(error)}};
 
 async function init() {

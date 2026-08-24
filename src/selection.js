@@ -11,6 +11,7 @@ let pinned = false;
 let activeRequest = 0;
 let opening = false;
 let resizeTimer;
+let resizeSequence = 0;
 
 function setMode(mode) {
   document.body.className = mode === 'dot' ? 'dot-mode' : 'card-mode';
@@ -35,16 +36,41 @@ function charCount(text) {
   return Array.from(String(text)).length;
 }
 
+function rangeHeight(element) {
+  if (!element.textContent) return 0;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  return Math.ceil(range.getBoundingClientRect().height);
+}
+
+async function fitContent(sequence) {
+  const longest = Math.max(charCount(source), charCount(output));
+  const width = longest < 100 ? 460 : (longest < 320 ? 540 : 620);
+  const roughLines = lineCount(source) + lineCount(output) +
+    Math.ceil((charCount(source) + charCount(output)) / Math.max(36, Math.floor((width - 54) / 8)));
+  const roughHeight = Math.max(320, Math.min(720, 235 + roughLines * 24));
+  await invoke('resize_selection_popup', { width, height: roughHeight });
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  if (sequence !== resizeSequence) return;
+
+  const sourceHeight = Math.max(42, Math.min(160, rangeHeight($('#source')) + 22));
+  const resultHeight = Math.max(68, Math.min(500, rangeHeight($('#result')) + 24));
+  const fixedHeight =
+    $('#card > header').offsetHeight +
+    $('.preferences').offsetHeight +
+    $('footer').offsetHeight +
+    sourceHeight + resultHeight + 30;
+  const nativeFrame = 42;
+  const height = Math.max(300, Math.min(760, fixedHeight + nativeFrame));
+  await invoke('resize_selection_popup', { width, height });
+}
+
 function scheduleResize() {
   clearTimeout(resizeTimer);
+  const sequence = ++resizeSequence;
   resizeTimer = setTimeout(() => {
-    invoke('resize_selection_popup', {
-      sourceLen: charCount(source),
-      resultLen: charCount(output),
-      sourceLines: lineCount(source),
-      resultLines: lineCount(output)
-    }).catch(() => {});
-  }, 90);
+    fitContent(sequence).catch(() => {});
+  }, 100);
 }
 
 async function openFromDot() {
@@ -141,7 +167,6 @@ async function init() {
   $('#selection-dot').addEventListener('click', openFromDot);
   $('#language').addEventListener('change', startTranslation);
   $('#addition').addEventListener('change', startTranslation);
-  $('#settings').onclick = () => invoke('open_settings_window');
   $('#pin').onclick = () => setPinned(!pinned);
   $('#close').onclick = closePopup;
   $('#copy').onclick = async () => {
@@ -150,16 +175,6 @@ async function init() {
     $('#status').textContent = '已复制';
   };
 
-  $('#drag-handle').addEventListener('mousedown', event => {
-    if (event.button !== 0 || event.target.closest('button,select')) return;
-    invoke('start_selection_drag').catch(() => {});
-  });
-
-  window.addEventListener('blur', () => {
-    if (!pinned && document.body.classList.contains('card-mode')) {
-      invoke('dismiss_selection_popup');
-    }
-  });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closePopup();
   });
