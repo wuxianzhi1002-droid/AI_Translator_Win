@@ -1,0 +1,8 @@
+.language-head,
+.language-row {
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 92px 36px;
+}
+
+.mapping-row select {
+  min-width: 0;
+}

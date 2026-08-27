@@ -1,7 +1,7 @@
 {
   "name": "ai-translator-windows",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
@@ -15,6 +15,7 @@
     "vite": "^6.1.0"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.8.0"
+    "@tauri-apps/api": "^2.8.0",
+    "katex": "^0.16.22"
   }
 }
