@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 const $ = selector => document.querySelector(selector);
 const currentWindow = getCurrentWindow();
@@ -26,6 +28,48 @@ function fillSelect(select, items, selectedId) {
     select.append(option);
   }
   select.value = items.some(item => item.id === selectedId) ? selectedId : (items[0]?.id || '');
+}
+
+function selectedOutputMode() {
+  return settings?.languages?.find(item => item.id === $('#language').value)?.output_mode || 'text';
+}
+
+function isFormulaMode() {
+  return selectedOutputMode() === 'latex';
+}
+
+function cleanLatex(text) {
+  let value = String(text || '').trim();
+  value = value.replace(/^```(?:latex|tex)?\s*/i, '').replace(/\s*```$/, '').trim();
+  if (value.startsWith('\\[') && value.endsWith('\\]')) value = value.slice(2, -2).trim();
+  if (value.startsWith('\\(') && value.endsWith('\\)')) value = value.slice(2, -2).trim();
+  if (value.startsWith('$$') && value.endsWith('$$')) value = value.slice(2, -2).trim();
+  else if (value.startsWith('$') && value.endsWith('$')) value = value.slice(1, -1).trim();
+  return value;
+}
+
+function updateTaskUi() {
+  const formula = isFormulaMode();
+  document.body.classList.toggle('formula-mode', formula);
+  $('#output-label').textContent = formula ? '任务' : '目标语言';
+  $('#copy').textContent = formula ? '复制 LaTeX' : '复制译文';
+}
+
+function showPendingResult() {
+  const message = isFormulaMode() ? '正在生成公式…' : '正在翻译…';
+  $('#result').innerHTML = `<span class="placeholder">${message}</span>`;
+  $('#status').textContent = message;
+}
+
+function renderFormula() {
+  const latex = cleanLatex(output);
+  if (!latex) throw new Error('模型没有返回 LaTeX 源码');
+  katex.render(latex, $('#result'), {
+    displayMode: true,
+    throwOnError: true,
+    strict: 'warn',
+    trust: false,
+  });
 }
 
 function lineCount(text) {
@@ -93,8 +137,8 @@ async function startTranslation() {
   }
   const requestId = ++activeRequest;
   output = '';
-  $('#result').innerHTML = '<span class="placeholder">正在翻译…</span>';
-  $('#status').textContent = '正在翻译…';
+  updateTaskUi();
+  showPendingResult();
   scheduleResize();
   try {
     await invoke('translate_selection', { languageId, additionId, requestId });
@@ -135,9 +179,9 @@ async function init() {
     settings = await invoke('load_settings');
     fillSelect($('#language'), settings.languages || [], settings.selected_language_id);
     fillSelect($('#addition'), settings.additions || [], settings.selected_addition_id);
+    updateTaskUi();
     $('#source').textContent = source;
-    $('#result').innerHTML = '<span class="placeholder">正在翻译…</span>';
-    $('#status').textContent = '';
+    showPendingResult();
     setMode('card');
     await startTranslation();
   });
@@ -152,7 +196,17 @@ async function init() {
 
   await listen('selection-done', event => {
     if (event.payload?.requestId !== activeRequest) return;
-    $('#status').textContent = '翻译完成';
+    if (isFormulaMode()) {
+      try {
+        renderFormula();
+        $('#status').textContent = '公式已生成';
+      } catch (error) {
+        $('#result').textContent = cleanLatex(output);
+        $('#status').textContent = `LaTeX 渲染失败：${String(error.message || error)}`;
+      }
+    } else {
+      $('#status').textContent = '翻译完成';
+    }
     scheduleResize();
   });
 
@@ -169,8 +223,8 @@ async function init() {
   $('#pin').onclick = () => setPinned(!pinned);
   $('#copy').onclick = async () => {
     if (!output) return;
-    await invoke('write_clipboard_text', { text: output });
-    $('#status').textContent = '已复制';
+    await invoke('write_clipboard_text', { text: isFormulaMode() ? cleanLatex(output) : output });
+    $('#status').textContent = isFormulaMode() ? '已复制 LaTeX 源码' : '已复制';
   };
 
   document.addEventListener('keydown', event => {

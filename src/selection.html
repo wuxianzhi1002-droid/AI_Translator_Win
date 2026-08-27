@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>划词翻译</title>
   <link rel="stylesheet" href="selection.css">
+  <link rel="stylesheet" href="formula.css">
 </head>
 <body class="dot-mode">
   <button id="selection-dot" aria-label="翻译选中文字" title="悬停翻译"></button>
 
   <main id="card">
     <div class="preferences">
-      <label>目标语言<select id="language"></select></label>
+      <label><span id="output-label">目标语言</span><select id="language"></select></label>
       <label>附加要求<select id="addition"></select></label>
       <button id="pin" title="置顶">◇</button>
     </div>
