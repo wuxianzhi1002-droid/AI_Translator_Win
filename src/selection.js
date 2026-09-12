@@ -14,6 +14,9 @@ let activeRequest = 0;
 let opening = false;
 let resizeTimer;
 let resizeSequence = 0;
+let translationTimer;
+let composing = false;
+let sourceDirty = false;
 
 function setMode(mode) {
   document.body.className = mode === 'dot' ? 'dot-mode' : 'card-mode';
@@ -87,24 +90,32 @@ function rangeHeight(element) {
   return Math.ceil(range.getBoundingClientRect().height);
 }
 
+function fitSourceEditor() {
+  const editor = $('#source');
+  editor.style.height = '0px';
+  editor.style.height = `${Math.max(42, editor.scrollHeight + 2)}px`;
+}
+
 async function fitContent(sequence) {
   const longest = Math.max(charCount(source), charCount(output));
   const width = longest < 100 ? 460 : (longest < 320 ? 540 : 620);
   const roughLines = lineCount(source) + lineCount(output) +
     Math.ceil((charCount(source) + charCount(output)) / Math.max(36, Math.floor((width - 54) / 8)));
-  const roughHeight = Math.max(280, Math.min(680, 190 + roughLines * 24));
+  const availableHeight = Math.max(360, (window.screen?.availHeight || 900) - 72);
+  const roughHeight = Math.max(280, Math.min(availableHeight, 190 + roughLines * 24));
   await invoke('resize_selection_popup', { width, height: roughHeight });
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   if (sequence !== resizeSequence) return;
 
-  const sourceHeight = Math.max(42, Math.min(160, rangeHeight($('#source')) + 22));
+  fitSourceEditor();
+  const sourceHeight = $('#source').offsetHeight;
   const resultHeight = Math.max(68, Math.min(500, rangeHeight($('#result')) + 24));
   const fixedHeight =
     $('.preferences').offsetHeight +
     $('footer').offsetHeight +
     sourceHeight + resultHeight + 30;
   const nativeFrame = 42;
-  const height = Math.max(280, Math.min(720, fixedHeight + nativeFrame));
+  const height = Math.max(280, Math.min(availableHeight, fixedHeight + nativeFrame));
   await invoke('resize_selection_popup', { width, height });
 }
 
@@ -129,23 +140,52 @@ async function openFromDot() {
 }
 
 async function startTranslation() {
+  clearTimeout(translationTimer);
+  source = $('#source').value;
   const languageId = $('#language').value;
   const additionId = $('#addition').value;
+  if (!source.trim()) {
+    activeRequest++;
+    sourceDirty = true;
+    output = '';
+    $('#result').innerHTML = '<span class="placeholder">请输入原文</span>';
+    $('#status').textContent = '';
+    scheduleResize();
+    return;
+  }
   if (!languageId || !additionId) {
     $('#status').textContent = '请先在设置中配置语言和附加要求';
     return;
   }
   const requestId = ++activeRequest;
+  sourceDirty = false;
   output = '';
   updateTaskUi();
   showPendingResult();
   scheduleResize();
   try {
-    await invoke('translate_selection', { languageId, additionId, requestId });
+    await invoke('translate_selection', { languageId, additionId, requestId, sourceText: source });
   } catch (error) {
     if (requestId !== activeRequest) return;
     $('#status').textContent = '失败：' + String(error);
   }
+}
+
+function scheduleEditedTranslation() {
+  source = $('#source').value;
+  fitSourceEditor();
+  activeRequest++;
+  output = '';
+  if (!sourceDirty) {
+    sourceDirty = true;
+    invoke('cancel_translation').catch(() => {});
+  }
+  $('#result').innerHTML = `<span class="placeholder">${source.trim() ? '等待输入完成…' : '请输入原文'}</span>`;
+  $('#status').textContent = source.trim() ? '编辑后将自动翻译' : '';
+  scheduleResize();
+  clearTimeout(translationTimer);
+  if (!source.trim() || composing) return;
+  translationTimer = setTimeout(() => startTranslation(), 500);
 }
 
 async function setPinned(next) {
@@ -157,7 +197,10 @@ async function setPinned(next) {
 }
 
 async function closePopup() {
+  clearTimeout(translationTimer);
   activeRequest++;
+  sourceDirty = false;
+  invoke('cancel_translation').catch(() => {});
   pinned = false;
   await invoke('set_selection_pinned', { pinned: false });
   await currentWindow.hide();
@@ -165,12 +208,20 @@ async function closePopup() {
 
 async function init() {
   await listen('selection-dot-ready', () => {
+    clearTimeout(translationTimer);
     activeRequest++;
+    sourceDirty = false;
     pinned = false;
     opening = false;
     $('#pin').classList.remove('active');
     $('#pin').textContent = '◇';
     setMode('dot');
+  });
+
+  await listen('selection-hidden', () => {
+    clearTimeout(translationTimer);
+    activeRequest++;
+    sourceDirty = false;
   });
 
   await listen('selection-start', async event => {
@@ -180,7 +231,8 @@ async function init() {
     fillSelect($('#language'), settings.languages || [], settings.selected_language_id);
     fillSelect($('#addition'), settings.additions || [], settings.selected_addition_id);
     updateTaskUi();
-    $('#source').textContent = source;
+    $('#source').value = source;
+    fitSourceEditor();
     showPendingResult();
     setMode('card');
     await startTranslation();
@@ -220,6 +272,21 @@ async function init() {
   $('#selection-dot').addEventListener('click', openFromDot);
   $('#language').addEventListener('change', startTranslation);
   $('#addition').addEventListener('change', startTranslation);
+  $('#source').addEventListener('input', scheduleEditedTranslation);
+  $('#source').addEventListener('compositionstart', () => {
+    composing = true;
+  });
+  $('#source').addEventListener('compositionend', () => {
+    composing = false;
+    scheduleEditedTranslation();
+  });
+  $('#source').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      composing = false;
+      startTranslation();
+    }
+  });
   $('#pin').onclick = () => setPinned(!pinned);
   $('#copy').onclick = async () => {
     if (!output) return;
