@@ -595,7 +595,7 @@ fn cancel_translation(state: tauri::State<State>) {
 fn resize_selection_popup(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app.get_webview_window("selection").ok_or("划词翻译窗口未初始化")?;
     let width = width.clamp(400.0, 760.0);
-    let height = height.clamp(280.0, 760.0);
+    let height = height.clamp(280.0, 1600.0);
     window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())
 }
 

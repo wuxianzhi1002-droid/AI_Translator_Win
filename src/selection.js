@@ -92,8 +92,8 @@ function rangeHeight(element) {
 
 function fitSourceEditor() {
   const editor = $('#source');
-  editor.style.height = 'auto';
-  editor.style.height = `${Math.max(42, Math.min(160, editor.scrollHeight))}px`;
+  editor.style.height = '0px';
+  editor.style.height = `${Math.max(42, editor.scrollHeight + 2)}px`;
 }
 
 async function fitContent(sequence) {
@@ -101,19 +101,21 @@ async function fitContent(sequence) {
   const width = longest < 100 ? 460 : (longest < 320 ? 540 : 620);
   const roughLines = lineCount(source) + lineCount(output) +
     Math.ceil((charCount(source) + charCount(output)) / Math.max(36, Math.floor((width - 54) / 8)));
-  const roughHeight = Math.max(280, Math.min(680, 190 + roughLines * 24));
+  const availableHeight = Math.max(360, (window.screen?.availHeight || 900) - 72);
+  const roughHeight = Math.max(280, Math.min(availableHeight, 190 + roughLines * 24));
   await invoke('resize_selection_popup', { width, height: roughHeight });
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   if (sequence !== resizeSequence) return;
 
-  const sourceHeight = Math.max(42, Math.min(160, $('#source').scrollHeight + 2));
+  fitSourceEditor();
+  const sourceHeight = $('#source').offsetHeight;
   const resultHeight = Math.max(68, Math.min(500, rangeHeight($('#result')) + 24));
   const fixedHeight =
     $('.preferences').offsetHeight +
     $('footer').offsetHeight +
     sourceHeight + resultHeight + 30;
   const nativeFrame = 42;
-  const height = Math.max(280, Math.min(720, fixedHeight + nativeFrame));
+  const height = Math.max(280, Math.min(availableHeight, fixedHeight + nativeFrame));
   await invoke('resize_selection_popup', { width, height });
 }
 
