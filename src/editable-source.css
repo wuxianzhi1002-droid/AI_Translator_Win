@@ -1,0 +1,24 @@
+#source {
+  display: block;
+  width: calc(100% - 24px);
+  min-height: 42px;
+  max-height: 160px;
+  resize: none;
+  border: 1px solid transparent;
+  outline: none;
+  font-family: inherit;
+}
+
+#source:hover {
+  border-color: #dfe2e7;
+}
+
+#source:focus {
+  border-color: #8ab4f8;
+  background: #fff;
+  box-shadow: 0 0 0 2px #8ab4f833;
+}
+
+#source::placeholder {
+  color: #9a9ea5;
+}
